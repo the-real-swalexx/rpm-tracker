@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RPM Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f8f7f4; --surface: #ffffff; --surface2: #f2f1ed;
+    --border: rgba(0,0,0,0.08); --border-med: rgba(0,0,0,0.14);
+    --text: #1a1a18; --text-2: #6b6b64; --text-3: #a8a8a0;
+    --accent: #1a1a18; --green: #2a7a5a; --green-bg: #eaf4ee;
+    --blue: #2060a8; --radius: 10px; --radius-lg: 14px;
+    --mono: 'DM Mono', monospace; --sans: 'DM Sans', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141412; --surface: #1e1e1c; --surface2: #252523;
+      --border: rgba(255,255,255,0.07); --border-med: rgba(255,255,255,0.12);
+      --text: #f0efe8; --text-2: #9a9a90; --text-3: #5a5a52;
+      --accent: #f0efe8; --green: #4ab87a; --green-bg: #0e2418; --blue: #5a9de8;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+
+  #auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  .auth-box { width: 100%; max-width: 360px; }
+  .auth-wordmark { font-family: var(--mono); font-size: 13px; letter-spacing: 0.12em; color: var(--text-3); text-transform: uppercase; margin-bottom: 2.5rem; }
+  .auth-title { font-size: 28px; font-weight: 300; color: var(--text); margin-bottom: 0.4rem; letter-spacing: -0.02em; }
+  .auth-sub { font-size: 14px; color: var(--text-2); margin-bottom: 2rem; line-height: 1.6; }
+  .auth-field { margin-bottom: 12px; }
+  .auth-field label { display: block; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3); margin-bottom: 6px; font-family: var(--mono); }
+  .auth-field input { width: 100%; padding: 11px 14px; border: 1px solid var(--border-med); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 15px; font-family: var(--sans); outline: none; transition: border-color 0.15s; }
+  .auth-field input:focus { border-color: var(--accent); }
+  .auth-btn { width: 100%; padding: 12px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius); font-size: 14px; font-weight: 500; font-family: var(--sans); cursor: pointer; margin-top: 8px; letter-spacing: 0.02em; transition: opacity 0.15s; }
+  .auth-btn:hover { opacity: 0.82; }
+  .auth-btn:disabled { opacity: 0.4; cursor: default; }
+  .auth-err { background: #fef2f2; color: #991b1b; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin-bottom: 12px; display: none; }
+  @media (prefers-color-scheme: dark) { .auth-err { background: #2a0f0f; color: #f87171; } }
+
+  #app-screen { display: none; min-height: 100vh; }
+  .app-header { border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; height: 52px; background: var(--surface); position: sticky; top: 0; z-index: 10; }
+  .app-wordmark { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; color: var(--text-3); text-transform: uppercase; }
+  .signout-btn { font-size: 12px; color: var(--text-3); background: none; border: none; cursor: pointer; font-family: var(--mono); letter-spacing: 0.05em; }
+  .signout-btn:hover { color: var(--text); }
+  .app-nav { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 1.5rem; overflow-x: auto; }
+  .nav-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 12px 16px; font-size: 13px; font-family: var(--sans); color: var(--text-2); cursor: pointer; margin-bottom: -1px; white-space: nowrap; }
+  .nav-tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+  .nav-tab:hover:not(.active) { color: var(--text); }
+  .app-body { max-width: 680px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  .view { display: none; } .view.active { display: block; }
+
+  .slabel { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+  .card-grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 8px; margin-bottom: 1.5rem; }
+  .card-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+  .metric-card { background: var(--surface2); border-radius: var(--radius); padding: 12px 10px; }
+  .metric-letter { font-family: var(--mono); font-size: 16px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+  .metric-desc { font-size: 9px; color: var(--text-3); margin-bottom: 10px; line-height: 1.3; font-family: var(--mono); }
+  .metric-input { width: 100%; border: 1px solid var(--border-med); border-radius: 8px; background: var(--surface); color: var(--text); font-family: var(--mono); font-size: 20px; font-weight: 500; text-align: center; padding: 7px 4px; outline: none; }
+  .metric-input:focus { border-color: var(--accent); }
+  .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1.5rem; }
+  .check-item { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-radius: var(--radius); padding: 12px; cursor: pointer; border: 1px solid transparent; user-select: none; }
+  .check-item.done { background: var(--green-bg); border-color: rgba(42,122,90,0.2); }
+  .check-item input[type=checkbox] { margin-top: 1px; flex-shrink: 0; cursor: pointer; accent-color: var(--green); }
+  .check-label { font-size: 12px; color: var(--text); line-height: 1.4; }
+  .check-item.done .check-label { color: var(--green); }
+  .score-card { background: var(--surface2); border-radius: var(--radius); padding: 14px; }
+  .score-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 6px; }
+  .score-num { font-family: var(--mono); font-size: 30px; font-weight: 500; color: var(--text); }
+  .score-denom { font-size: 14px; font-weight: 300; color: var(--text-3); }
+  .save-btn { width: 100%; padding: 13px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius); font-size: 14px; font-weight: 500; font-family: var(--sans); cursor: pointer; }
+  .save-btn:hover { opacity: 0.82; } .save-btn:disabled { opacity: 0.4; }
+  .save-msg { text-align: center; font-size: 13px; color: var(--green); margin-top: 10px; height: 20px; font-family: var(--mono); }
+  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .date-lbl { font-size: 15px; font-weight: 500; color: var(--text); }
+  .dnav { display: flex; gap: 6px; }
+  .icon-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 11px; font-size: 13px; cursor: pointer; color: var(--text-2); font-family: var(--sans); }
+  .icon-btn:hover { color: var(--text); }
+  .week-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+  .day-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .day-lbl { font-family: var(--mono); font-size: 11px; color: var(--text-3); width: 30px; flex-shrink: 0; }
+  .day-bars { display: flex; gap: 4px; flex: 1; }
+  .dbar { height: 24px; border-radius: 4px; background: var(--surface2); flex: 1; position: relative; overflow: hidden; }
+  .dbar-fill { height: 100%; border-radius: 4px; }
+  .dbar-val { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 9px; font-family: var(--mono); color: var(--text-2); }
+  .check-week-row { display: flex; align-items: center; justify-content: space-between; background: var(--surface2); border-radius: var(--radius); padding: 9px 13px; margin-bottom: 6px; }
+  .cw-name { font-size: 13px; color: var(--text); }
+  .cw-right { display: flex; align-items: center; gap: 8px; }
+  .dots { display: flex; gap: 4px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-med); }
+  .dot.on { background: var(--text); }
+  .cw-ct { font-family: var(--mono); font-size: 11px; color: var(--text-3); min-width: 24px; text-align: right; }
+  .trend-sect { margin-bottom: 2rem; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { padding: 5px 12px; font-size: 12px; font-family: var(--mono); border: 1px solid var(--border-med); border-radius: 20px; cursor: pointer; background: none; color: var(--text-2); }
+  .chip.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; color: var(--text-2); font-family: var(--mono); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .streak-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1.5rem; }
+  .streak-card { background: var(--surface2); border-radius: var(--radius); padding: 13px; }
+  .streak-name { font-size: 11px; color: var(--text-2); margin-bottom: 6px; line-height: 1.35; font-family: var(--mono); }
+  .streak-num { font-family: var(--mono); font-size: 26px; font-weight: 500; color: var(--text); }
+  .streak-unit { font-size: 13px; font-weight: 300; color: var(--text-3); }
+  .streak-best { font-size: 10px; color: var(--text-3); margin-top: 4px; font-family: var(--mono); }
+  @media (max-width: 480px) { .check-grid { grid-template-columns: 1fr; } .metric-input { font-size: 18px; } }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     CONFIGURATION
+     Replace these two values with your own from:
+     Supabase Dashboard → Settings → API
+     ══════════════════════════════════════════════════════════ -->
+<script>
+  const SUPABASE_URL      = 'https://pbehgqxneiuxdgotmlvo.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_i1jB4xTWOf7zTQXd6nnRpQ_IHRzrcdr';
+  // Your GitHub Pages URL — magic links redirect back here after click
+  // e.g. 'https://the-real-swalexx.github.io/rpm-tracker/'
+  const APP_URL = 'YOUR_GITHUB_PAGES_URL';
+</script>
+<!-- ══════════════════════════════════════════════════════════ -->
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-wordmark">RPM Tracker</div>
+
+    <div id="auth-form-state">
+      <h1 class="auth-title">Sign in</h1>
+      <p class="auth-sub">Enter your email and we'll send you a link — no password needed.</p>
+      <div class="auth-err" id="auth-err"></div>
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <button class="auth-btn" id="auth-submit" onclick="handleAuth()">Send magic link</button>
+    </div>
+
+    <div id="auth-sent-state" style="display:none;">
+      <h1 class="auth-title">Check your email</h1>
+      <p class="auth-sub">A sign-in link is on its way. Click it to open the app — it works once and expires in an hour.</p>
+      <p style="font-size:12px;color:var(--text-3);font-family:var(--mono);margin-top:1rem;">
+        Wrong address? <a onclick="resetAuthForm()" style="color:var(--text);cursor:pointer;text-decoration:underline;">Go back</a>
+      </p>
+    </div>
+
+    <div id="auth-verifying-state" style="display:none;">
+      <h1 class="auth-title">Signing you in…</h1>
+      <p class="auth-sub">Verifying your link, one moment.</p>
+    </div>
+  </div>
+</div>
+
+<!-- APP SCREEN -->
+<div id="app-screen">
+  <header class="app-header">
+    <span class="app-wordmark">RPM Tracker</span>
+    <button class="signout-btn" onclick="signOut()">sign out</button>
+  </header>
+  <nav class="app-nav">
+    <button class="nav-tab active" onclick="showView('log',this)">Log</button>
+    <button class="nav-tab" onclick="showView('week',this)">Week</button>
+    <button class="nav-tab" onclick="showView('trends',this)">Trends</button>
+    <button class="nav-tab" onclick="showView('streaks',this)">Streaks</button>
+  </nav>
+  <div class="app-body">
+
+    <div id="view-log" class="view active">
+      <div class="date-nav">
+        <div class="date-lbl" id="log-date-lbl"></div>
+        <div class="dnav">
+          <button class="icon-btn" onclick="changeLogDate(-1)">←</button>
+          <button class="icon-btn" onclick="changeLogDate(1)">→</button>
+          <button class="icon-btn" onclick="goToday()" style="font-size:11px;font-family:var(--mono);">today</button>
+        </div>
+      </div>
+      <div class="slabel">R · M · H · T out of 10 &nbsp;·&nbsp; P uncapped</div>
+      <div class="card-grid-5">
+        <div class="metric-card"><div class="metric-letter">R</div><div class="metric-desc">tasks ratio</div><input class="metric-input" type="number" id="inp-R" min="0" max="10" step="1" value="5" oninput="calcScore()"></div>
+        <div class="metric-card"><div class="metric-letter">P</div><div class="metric-desc">pomodoros</div><input class="metric-input" type="number" id="inp-P" min="0" step="1" value="5" oninput="calcScore()"></div>
+        <div class="metric-card"><div class="metric-letter">M</div><div class="metric-desc">mind & body</div><input class="metric-input" type="number" id="inp-M" min="0" max="10" step="1" value="5" oninput="calcScore()"></div>
+        <div class="metric-card"><div class="metric-letter">H</div><div class="metric-desc">household</div><input class="metric-input" type="number" id="inp-H" min="0" max="10" step="1" value="5" oninput="calcScore()"></div>
+        <div class="metric-card"><div class="metric-letter">T</div><div class="metric-desc">tribe</div><input class="metric-input" type="number" id="inp-T" min="0" max="10" step="1" value="5" oninput="calcScore()"></div>
+      </div>
+      <div class="card-grid-2">
+        <div class="score-card"><div class="score-lbl">(R+P+M+H+T) × 2</div><div class="score-num" id="daily-score">50</div></div>
+        <div class="score-card"><div class="score-lbl">checks today</div><div class="score-num" id="checks-tally">0<span class="score-denom"> / 5</span></div></div>
+      </div>
+      <div class="slabel">Daily checks</div>
+      <div class="check-grid">
+        <div class="check-item" id="ci-0" onclick="toggleCheck(0)"><input type="checkbox" id="ch-0"><span class="check-label">In bed by midnight</span></div>
+        <div class="check-item" id="ci-1" onclick="toggleCheck(1)"><input type="checkbox" id="ch-1"><span class="check-label">Mind/body chain complete</span></div>
+        <div class="check-item" id="ci-2" onclick="toggleCheck(2)"><input type="checkbox" id="ch-2"><span class="check-label">Worked on the book</span></div>
+        <div class="check-item" id="ci-3" onclick="toggleCheck(3)"><input type="checkbox" id="ch-3"><span class="check-label">Worked on the business</span></div>
+        <div class="check-item" id="ci-4" onclick="toggleCheck(4)"><input type="checkbox" id="ch-4"><span class="check-label">6+ focused work sprints</span></div>
+      </div>
+      <button class="save-btn" id="save-btn" onclick="saveEntry()">Save entry</button>
+      <div class="save-msg" id="save-msg"></div>
+    </div>
+
+    <div id="view-week" class="view">
+      <div class="date-nav">
+        <div class="date-lbl" id="week-lbl"></div>
+        <div class="dnav">
+          <button class="icon-btn" onclick="changeWeek(-1)">←</button>
+          <button class="icon-btn" onclick="changeWeek(1)">→</button>
+        </div>
+      </div>
+      <div class="slabel">Metric averages</div>
+      <div class="card-grid-5" style="margin-bottom:1rem;">
+        <div class="metric-card" style="text-align:center;"><div class="metric-letter" style="text-align:center;">R</div><div class="score-num" style="font-size:20px;" id="wa-R">—</div><div style="font-size:9px;color:var(--text-3);font-family:var(--mono);" id="wd-R">0d</div></div>
+        <div class="metric-card" style="text-align:center;"><div class="metric-letter" style="text-align:center;">P</div><div class="score-num" style="font-size:20px;" id="wa-P">—</div><div style="font-size:9px;color:var(--text-3);font-family:var(--mono);" id="wd-P">0d</div></div>
+        <div class="metric-card" style="text-align:center;"><div class="metric-letter" style="text-align:center;">M</div><div class="score-num" style="font-size:20px;" id="wa-M">—</div><div style="font-size:9px;color:var(--text-3);font-family:var(--mono);" id="wd-M">0d</div></div>
+        <div class="metric-card" style="text-align:center;"><div class="metric-letter" style="text-align:center;">H</div><div class="score-num" style="font-size:20px;" id="wa-H">—</div><div style="font-size:9px;color:var(--text-3);font-family:var(--mono);" id="wd-H">0d</div></div>
+        <div class="metric-card" style="text-align:center;"><div class="metric-letter" style="text-align:center;">T</div><div class="score-num" style="font-size:20px;" id="wa-T">—</div><div style="font-size:9px;color:var(--text-3);font-family:var(--mono);" id="wd-T">0d</div></div>
+      </div>
+      <div class="week-scores">
+        <div class="score-card"><div class="score-lbl">avg daily score</div><div class="score-num" id="week-daily">—<span class="score-denom"> /100+</span></div></div>
+        <div class="score-card"><div class="score-lbl">weekly check score</div><div class="score-num" id="week-checks">—<span class="score-denom"> /105</span></div></div>
+      </div>
+      <div class="slabel">Daily breakdown</div>
+      <div id="day-bars"></div>
+      <div class="slabel" style="margin-top:1.5rem;">Check-ins</div>
+      <div id="week-check-rows"></div>
+    </div>
+
+    <div id="view-trends" class="view">
+      <div class="trend-sect">
+        <div class="slabel">Weekly composite scores</div>
+        <div class="chip-row">
+          <button class="chip on" onclick="setCompositeMode('both',this)">Both</button>
+          <button class="chip" onclick="setCompositeMode('daily',this)">Daily score</button>
+          <button class="chip" onclick="setCompositeMode('checks',this)">Check score</button>
+        </div>
+        <div class="chart-legend" id="composite-legend"></div>
+        <div style="position:relative;width:100%;height:220px;"><canvas id="compositeChart"></canvas></div>
+      </div>
+      <div class="trend-sect">
+        <div class="slabel">Individual metric (last 60 days)</div>
+        <div class="chip-row" id="metric-chips"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="metricChart"></canvas></div>
+      </div>
+    </div>
+
+    <div id="view-streaks" class="view">
+      <div class="slabel">Check streaks</div>
+      <div class="streak-grid" id="check-streaks"></div>
+      <div class="slabel" style="margin-top:0.5rem;">Metric streaks (≥ 7)</div>
+      <div class="streak-grid" id="metric-streaks"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── SETUP CHECK ──────────────────────────────────────────────
+if (SUPABASE_URL === 'YOUR_SUPABASE_URL') {
+  document.getElementById('auth-screen').innerHTML = `
+    <div style="max-width:460px;margin:3rem auto;padding:2rem;font-family:var(--mono);">
+      <div style="font-size:12px;color:var(--text-3);letter-spacing:.1em;margin-bottom:1.5rem;">SETUP REQUIRED</div>
+      <p style="font-size:14px;line-height:1.7;color:var(--text);margin-bottom:1rem;">
+        Open this file in a text editor and replace the placeholder values near the top with your Supabase credentials.
+      </p>
+      <p style="font-size:13px;color:var(--text-2);line-height:1.7;">
+        Supabase Dashboard → Settings → API → Project URL and anon public key.
+      </p>
+    </div>`;
+}
+
+// ── SUPABASE INIT ────────────────────────────────────────────
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── CONSTANTS ────────────────────────────────────────────────
+const METRICS     = ['R','P','M','H','T'];
+const CHECK_NAMES = ['In bed by midnight','Mind/body chain complete','Worked on the book','Worked on the business','6+ focused work sprints'];
+const MCOLS       = { R:'#888780', P:'#2060a8', M:'#2a7a5a', H:'#8a5a10', T:'#a03060' };
+
+// ── STATE ────────────────────────────────────────────────────
+let currentUser    = null;
+let logDate        = todayStr();
+let weekOffset     = 0;
+let compositeMode  = 'both';
+let trendMetric    = 'P';
+let compositeChart = null;
+let metricChart    = null;
+let cache          = {};
+
+// ── UTILS ────────────────────────────────────────────────────
+function todayStr() { return new Date().toISOString().slice(0,10); }
+
+function getWeekDates(offset) {
+  const t = new Date(); t.setHours(12,0,0,0);
+  const m = new Date(t); m.setDate(t.getDate() - ((t.getDay()+6)%7) + offset*7);
+  return Array.from({length:7}, (_,i) => { const d=new Date(m); d.setDate(m.getDate()+i); return d.toISOString().slice(0,10); });
+}
+
+function dailyScore(e) { return ((e.r||0)+(e.p||0)+(e.m||0)+(e.h||0)+(e.t||0))*2; }
+function fmtDate(ds)   { return new Date(ds+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}); }
+function fmtShort(ds)  { const d=new Date(ds+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); }
+function showErr(msg)  { const el=document.getElementById('auth-err'); el.textContent=msg; el.style.display='block'; }
+function hideErr()     { document.getElementById('auth-err').style.display='none'; }
+
+// ── AUTH ─────────────────────────────────────────────────────
+async function handleAuth() {
+  const email = document.getElementById('auth-email').value.trim();
+  if (!email) { showErr('Please enter your email address.'); return; }
+  const btn = document.getElementById('auth-submit');
+  btn.disabled = true; btn.textContent = 'Sending…'; hideErr();
+  try {
+    const { error } = await sb.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: APP_URL }
+    });
+    if (error) throw error;
+    document.getElementById('auth-form-state').style.display = 'none';
+    document.getElementById('auth-sent-state').style.display = 'block';
+  } catch(e) {
+    showErr(e.message || 'Failed to send link. Try again.');
+    btn.disabled = false; btn.textContent = 'Send magic link';
+  }
+}
+
+function resetAuthForm() {
+  document.getElementById('auth-sent-state').style.display    = 'none';
+  document.getElementById('auth-verifying-state').style.display = 'none';
+  document.getElementById('auth-form-state').style.display    = 'block';
+  const btn = document.getElementById('auth-submit');
+  btn.disabled = false; btn.textContent = 'Send magic link';
+  document.getElementById('auth-email').value = '';
+  hideErr();
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  cache = {}; currentUser = null;
+  resetAuthForm();
+  document.getElementById('app-screen').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+sb.auth.onAuthStateChange((event, session) => {
+  if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
+    // Clean token from URL now that Supabase has processed it
+    if (window.location.hash.includes('access_token') || window.location.search.includes('code=')) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    if (!currentUser) {
+      currentUser = session.user;
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('app-screen').style.display  = 'block';
+      cache = {}; logDate = todayStr(); weekOffset = 0;
+      loadLogEntry();
+    }
+  }
+});
+
+// Show verifying state if a magic link token is present in the URL
+if (window.location.hash.includes('access_token') || window.location.search.includes('code=')) {
+  document.getElementById('auth-form-state').style.display      = 'none';
+  document.getElementById('auth-verifying-state').style.display = 'block';
+}
+
+document.getElementById('auth-email').addEventListener('keydown', e => { if (e.key==='Enter') handleAuth(); });
+
+// ── DATA ─────────────────────────────────────────────────────
+function emptyEntry(ds) {
+  return { entry_date:ds, user_id:currentUser?.id, r:5,p:5,m:5,h:5,t:5, c0:false,c1:false,c2:false,c3:false,c4:false };
+}
+
+async function fetchEntry(ds) {
+  if (cache[ds]) return cache[ds];
+  const { data } = await sb.from('entries').select('*').eq('user_id', currentUser.id).eq('entry_date', ds).maybeSingle();
+  cache[ds] = data || emptyEntry(ds);
+  return cache[ds];
+}
+
+async function fetchRange(from, to) {
+  const { data } = await sb.from('entries').select('*').eq('user_id', currentUser.id).gte('entry_date', from).lte('entry_date', to).order('entry_date');
+  if (data) data.forEach(row => { cache[row.entry_date] = row; });
+}
+
+async function fetchAll() {
+  const { data } = await sb.from('entries').select('*').eq('user_id', currentUser.id).order('entry_date');
+  cache = {};
+  if (data) data.forEach(row => { cache[row.entry_date] = row; });
+}
+
+async function upsertEntry(entry) {
+  const { error } = await sb.from('entries').upsert(entry, { onConflict: 'user_id,entry_date' });
+  if (error) throw error;
+  cache[entry.entry_date] = entry;
+}
+
+// ── LOG VIEW ─────────────────────────────────────────────────
+async function loadLogEntry() {
+  document.getElementById('log-date-lbl').textContent = fmtDate(logDate);
+  if (!currentUser) return;
+  const e = await fetchEntry(logDate);
+  METRICS.forEach(m => { document.getElementById('inp-'+m).value = e[m.toLowerCase()]; });
+  for (let i=0;i<5;i++) {
+    document.getElementById('ch-'+i).checked = e['c'+i]||false;
+    document.getElementById('ci-'+i).classList.toggle('done', e['c'+i]||false);
+  }
+  calcScore();
+}
+
+function calcScore() {
+  const s = METRICS.map(m=>parseFloat(document.getElementById('inp-'+m).value)||0).reduce((a,b)=>a+b,0)*2;
+  document.getElementById('daily-score').textContent = Math.round(s);
+  const done = Array.from({length:5},(_,i)=>document.getElementById('ch-'+i).checked).filter(Boolean).length;
+  document.getElementById('checks-tally').innerHTML = done+'<span class="score-denom"> / 5</span>';
+}
+
+function toggleCheck(i) {
+  const cb=document.getElementById('ch-'+i); cb.checked=!cb.checked;
+  document.getElementById('ci-'+i).classList.toggle('done', cb.checked);
+  calcScore();
+}
+
+async function saveEntry() {
+  const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Saving…';
+  const entry = { entry_date:logDate, user_id:currentUser.id };
+  METRICS.forEach(m => { entry[m.toLowerCase()] = parseFloat(document.getElementById('inp-'+m).value)||0; });
+  for (let i=0;i<5;i++) entry['c'+i] = document.getElementById('ch-'+i).checked;
+  try {
+    await upsertEntry(entry);
+    const msg=document.getElementById('save-msg'); msg.textContent='saved';
+    setTimeout(()=>{msg.textContent='';},2000);
+  } catch(e) { alert('Save failed: '+e.message); }
+  btn.disabled=false; btn.textContent='Save entry';
+}
+
+function changeLogDate(dir) {
+  const d=new Date(logDate+'T12:00:00'); d.setDate(d.getDate()+dir);
+  if (d>new Date()) return;
+  logDate=d.toISOString().slice(0,10); loadLogEntry();
+}
+function goToday() { logDate=todayStr(); loadLogEntry(); }
+
+// ── WEEK VIEW ────────────────────────────────────────────────
+async function renderWeek() {
+  const dates=getWeekDates(weekOffset);
+  const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('week-lbl').textContent=fmt(dates[0])+' – '+fmt(dates[6]);
+  await fetchRange(dates[0],dates[6]);
+  const entries=dates.map(d=>cache[d]), valid=entries.filter(Boolean);
+  const DAY=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  METRICS.forEach(m=>{
+    const vals=valid.map(e=>e[m.toLowerCase()]);
+    const avg=vals.length?(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+    document.getElementById('wa-'+m).textContent=avg!==null?avg.toFixed(1):'—';
+    document.getElementById('wd-'+m).textContent=vals.length+'d';
+  });
+
+  const avgDaily=valid.length?Math.round(valid.map(e=>dailyScore(e)).reduce((a,b)=>a+b,0)/valid.length):null;
+  document.getElementById('week-daily').innerHTML=(avgDaily!==null?avgDaily:'—')+'<span class="score-denom"> /100+</span>';
+  const totalCh=valid.reduce((s,e)=>s+[0,1,2,3,4].filter(i=>e['c'+i]).length,0);
+  document.getElementById('week-checks').innerHTML=(valid.length?totalCh*3:'—')+'<span class="score-denom"> /105</span>';
+
+  const maxP=Math.max(...entries.filter(Boolean).map(e=>e.p||0),10);
+  document.getElementById('day-bars').innerHTML=dates.map((date,i)=>{
+    const e=cache[date];
+    const bars=METRICS.map(m=>{
+      const val=e?e[m.toLowerCase()]:0, cap=m==='P'?maxP:10;
+      const pct=e?Math.min(val/cap*100,100):0;
+      return `<div class="dbar" title="${m}: ${val||''}"><div class="dbar-fill" style="width:${pct}%;background:${MCOLS[m]};opacity:.75;"></div><span class="dbar-val">${e?val:''}</span></div>`;
+    }).join('');
+    return `<div class="day-row"><span class="day-lbl">${DAY[i]}</span><div class="day-bars">${bars}</div></div>`;
+  }).join('');
+
+  document.getElementById('week-check-rows').innerHTML=CHECK_NAMES.map((name,ci)=>{
+    const dots=dates.map(date=>`<div class="dot${cache[date]&&cache[date]['c'+ci]?' on':''}"></div>`).join('');
+    const count=entries.filter(e=>e&&e['c'+ci]).length;
+    return `<div class="check-week-row"><span class="cw-name">${name}</span><div class="cw-right"><div class="dots">${dots}</div><span class="cw-ct">${count}/7</span></div></div>`;
+  }).join('');
+}
+
+function changeWeek(dir) { if(weekOffset+dir>0)return; weekOffset+=dir; renderWeek(); }
+
+// ── TRENDS VIEW ──────────────────────────────────────────────
+async function renderTrends() {
+  await fetchAll();
+  const keys=Object.keys(cache).sort();
+  renderCompositeChart(keys); renderMetricChart(keys);
+}
+
+function weeklyAggregates(keys) {
+  const weeks={};
+  keys.forEach(k=>{
+    const d=new Date(k+'T12:00:00'), m=new Date(d);
+    m.setDate(d.getDate()-((d.getDay()+6)%7));
+    const wk=m.toISOString().slice(0,10);
+    if(!weeks[wk]) weeks[wk]={entries:[],label:fmtShort(wk)};
+    weeks[wk].entries.push(cache[k]);
+  });
+  return Object.entries(weeks).sort((a,b)=>a[0]>b[0]?1:-1).slice(-16).map(([,v])=>{
+    const vld=v.entries.filter(Boolean);
+    const avg=vld.length?Math.round(vld.map(e=>dailyScore(e)).reduce((a,b)=>a+b,0)/vld.length):null;
+    const ch=vld.reduce((s,e)=>s+[0,1,2,3,4].filter(i=>e['c'+i]).length,0);
+    return {label:v.label, dailyScore:avg, checkScore:vld.length?ch*3:null};
+  });
+}
+
+function setCompositeMode(mode, btn) {
+  compositeMode=mode;
+  document.querySelectorAll('#view-trends .chip-row:first-child .chip').forEach(c=>c.classList.remove('on'));
+  btn.classList.add('on');
+  renderCompositeChart(Object.keys(cache).sort());
+}
+
+function renderCompositeChart(keys) {
+  const weeks=weeklyAggregates(keys);
+  const isDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const tc=isDark?'#666':'#aaa', gc=isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.04)';
+  const ds=[], li=[];
+  if(compositeMode==='both'||compositeMode==='daily'){
+    ds.push({label:'Daily',data:weeks.map(w=>w.dailyScore),borderColor:'#2060a8',backgroundColor:'#2060a818',borderWidth:1.5,pointRadius:3,fill:true,tension:.35,spanGaps:true});
+    li.push({color:'#2060a8',label:'avg daily score'});
+  }
+  if(compositeMode==='both'||compositeMode==='checks'){
+    ds.push({label:'Checks',data:weeks.map(w=>w.checkScore),borderColor:'#2a7a5a',backgroundColor:'#2a7a5a18',borderWidth:1.5,pointRadius:3,fill:true,tension:.35,spanGaps:true});
+    li.push({color:'#2a7a5a',label:'weekly check score /105'});
+  }
+  document.getElementById('composite-legend').innerHTML=li.map(l=>`<span class="legend-item"><span class="legend-dot" style="background:${l.color};"></span>${l.label}</span>`).join('');
+  if(compositeChart) compositeChart.destroy();
+  compositeChart=new Chart(document.getElementById('compositeChart'),{
+    type:'line', data:{labels:weeks.map(w=>w.label),datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{min:0,ticks:{color:tc,font:{size:10,family:'DM Mono'}},grid:{color:gc},border:{display:false}},
+              x:{ticks:{color:tc,font:{size:10,family:'DM Mono'},maxTicksLimit:8},grid:{display:false},border:{display:false}}}}
+  });
+}
+
+function renderMetricChart(keys) {
+  const rec=keys.slice(-60), vals=rec.map(k=>cache[k][trendMetric.toLowerCase()]);
+  const isDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const tc=isDark?'#666':'#aaa', gc=isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.04)';
+  if(metricChart) metricChart.destroy();
+  metricChart=new Chart(document.getElementById('metricChart'),{
+    type:'line',
+    data:{labels:rec.map(k=>fmtShort(k)),datasets:[{data:vals,borderColor:MCOLS[trendMetric],backgroundColor:MCOLS[trendMetric]+'18',borderWidth:1.5,pointRadius:rec.length>20?0:3,fill:true,tension:.35}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{min:0,ticks:{color:tc,font:{size:10,family:'DM Mono'}},grid:{color:gc},border:{display:false}},
+              x:{ticks:{color:tc,font:{size:10,family:'DM Mono'},maxTicksLimit:8,autoSkip:true},grid:{display:false},border:{display:false}}}}
+  });
+}
+
+function initMetricChips() {
+  const c=document.getElementById('metric-chips');
+  METRICS.forEach(m=>{
+    const btn=document.createElement('button');
+    btn.className='chip'+(m===trendMetric?' on':''); btn.textContent=m;
+    btn.onclick=()=>{
+      trendMetric=m;
+      document.querySelectorAll('#metric-chips .chip').forEach(x=>x.classList.remove('on'));
+      btn.classList.add('on'); renderMetricChart(Object.keys(cache).sort());
+    };
+    c.appendChild(btn);
+  });
+}
+
+// ── STREAKS VIEW ─────────────────────────────────────────────
+async function renderStreaks() {
+  if(!Object.keys(cache).length) await fetchAll();
+  const allKeys=Object.keys(cache).sort(), today=todayStr();
+  function streakFor(fn) {
+    let cur=0,best=0,run=0,prev=null;
+    const last=allKeys.slice(-1)[0];
+    allKeys.forEach(k=>{
+      if(fn(cache[k])){
+        if(prev){const d1=new Date(prev+'T12:00:00'),d2=new Date(k+'T12:00:00');run=Math.round((d2-d1)/86400000)===1?run+1:1;}else run=1;
+        if(run>best)best=run; if(k===today||k===last)cur=run;
+      }else{run=0;if(k===today)cur=0;}
+      prev=k;
+    });
+    return{cur,best};
+  }
+  document.getElementById('check-streaks').innerHTML=CHECK_NAMES.map((name,i)=>{
+    const s=streakFor(e=>e&&e['c'+i]);
+    return `<div class="streak-card"><div class="streak-name">${name}</div><div class="streak-num">${s.cur}<span class="streak-unit"> days</span></div><div class="streak-best">best: ${s.best} days</div></div>`;
+  }).join('');
+  document.getElementById('metric-streaks').innerHTML=METRICS.map(m=>{
+    const s=streakFor(e=>e&&e[m.toLowerCase()]>=7);
+    return `<div class="streak-card"><div class="streak-name">${m} ≥ 7</div><div class="streak-num">${s.cur}<span class="streak-unit"> days</span></div><div class="streak-best">best: ${s.best} days</div></div>`;
+  }).join('');
+}
+
+// ── NAV ───────────────────────────────────────────────────────
+function showView(v, btn) {
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(v==='week') renderWeek();
+  if(v==='trends') renderTrends();
+  if(v==='streaks') renderStreaks();
+}
+
+initMetricChips();
+</script>
+</body>
+</html>
